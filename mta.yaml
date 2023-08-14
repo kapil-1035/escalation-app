@@ -1,0 +1,115 @@
+_schema-version: "3.1"
+ID: backend
+description: A simple CAP project.
+version: 1.0.0
+modules:
+- name: backend-approuter
+  type: nodejs
+  path: app
+  requires:
+    - name: backend-repo-runtime
+    - name: backend-xsuaa  
+    - name: srv-api
+      group: destinations
+      properties:
+        # defining a destination with the name srv_api for the approuter to use
+        name: srv_api 
+        url: '~{srv-url}'
+        forwardAuthToken: true
+
+- name: backend-srv
+  type: nodejs
+  path: gen/srv
+  requires:
+  - name: backend-db
+  - name: backend-destination
+  - name: backend-xsuaa
+  provides:
+  - name: srv-api
+    properties:
+      srv-url: ${default-url}
+  parameters:
+    buildpack: nodejs_buildpack
+  build-parameters:
+    builder: npm
+- name: backend-db-deployer
+  type: hdb
+  path: gen/db
+  requires:
+  - name: backend-db
+  parameters:
+    buildpack: nodejs_buildpack
+- name: backend-app-content
+  type: com.sap.application.content
+  path: .
+  requires:
+  - name: backend-repo-host
+    parameters:
+      content-target: true
+  build-parameters:
+    build-result: resources
+    requires:
+    - artifacts:
+      - escalationsefe.zip
+      name: escalationsefe
+      target-path: resources/
+- name: escalationsefe
+  type: html5
+  path: app/escalationsefe
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+resources:
+- name: backend-db
+  type: com.sap.xs.hdi-container
+  parameters:
+    service: hana
+    service-plan: hdi-shared
+- name: backend-destination
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      HTML5Runtime_enabled: false
+      init_data:
+        instance:
+          destinations:
+          - Authentication: NoAuthentication
+            Name: ui5
+            ProxyType: Internet
+            Type: HTTP
+            URL: https://ui5.sap.com
+          existing_destinations_policy: update
+    service: destination
+    service-plan: lite
+- name: backend-xsuaa
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: xsuaa
+    service-plan: application
+    path: ./xs-security.json
+
+- name: backend-repo-runtime
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-name: backend-html5-rt
+    service-plan: app-runtime 
+
+- name: backend-repo-host
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-name: backend-html5-srv
+    service-plan: app-host
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+  - builder: custom
+    commands:
+    - npx cds build --production
